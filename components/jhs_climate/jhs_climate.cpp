@@ -117,7 +117,7 @@ esphome::climate::ClimateTraits JHSClimate::traits()
                                   esphome::climate::CLIMATE_PRESET_SLEEP});
     traits.set_visual_min_temperature(16);    // ~61F
     traits.set_visual_max_temperature(30);    // ~86F
-    traits.set_visual_temperature_step(0.5);
+    traits.set_visual_temperature_step(0.5555556);
     return traits;
 }
 

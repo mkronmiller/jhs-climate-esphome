@@ -36,8 +36,8 @@ struct JHSAcPacket
     uint8_t zero1 = 0; // bits 24-31
 
     uint8_t cool : 1 = 0;       // bit 32
-    uint8_t dehum : 1 = 0;      // bit 33
-    uint8_t fan : 1 = 0;        // bit 34
+    uint8_t fan : 1 = 0;        // bit 33   (was dehum)
+    uint8_t dehum : 1 = 0;      // bit 34   (was fan)
     uint8_t heat : 1 = 0;       // bit 35
     uint8_t sleep : 1 = 0;      // bit 36
     uint8_t water_full : 1 = 0; // bit 37
