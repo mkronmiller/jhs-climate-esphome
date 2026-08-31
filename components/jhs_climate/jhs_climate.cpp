@@ -9,7 +9,12 @@
 #include <sstream>
 #include <iomanip>
 
+
 static const char *TAG = "JHSClimate";
+
+#include <cmath>
+static inline float f_to_c(int f) { return (f - 32) * 5.0f / 9.0f; }
+static inline int c_to_f(float c) { return (int) lroundf(c * 9.0f / 5.0f + 32.0f); }
 
 namespace esphome
 {
@@ -110,9 +115,9 @@ esphome::climate::ClimateTraits JHSClimate::traits()
                                     esphome::climate::CLIMATE_FAN_HIGH});
     traits.set_supported_presets({esphome::climate::CLIMATE_PRESET_NONE,
                                   esphome::climate::CLIMATE_PRESET_SLEEP});
-    traits.set_visual_min_temperature(16);
-    traits.set_visual_max_temperature(31);
-    traits.set_visual_temperature_step(1);
+    traits.set_visual_min_temperature(16);    // ~61F
+    traits.set_visual_max_temperature(30);    // ~86F
+    traits.set_visual_temperature_step(0.5);
     return traits;
 }
 
@@ -256,14 +261,14 @@ void JHSClimate::recv_from_ac()
             // if we are not adjusting anything we can copy the state from the packet to the climate
 
             bool did_change = false;
-            if (packet.get_temp() > 0 && this->target_temperature != packet.get_temp() && packet.cool)
+            if (packet.get_temp() > 0 && c_to_f(this->target_temperature) != packet.get_temp() && packet.cool)
             {
-                this->target_temperature = packet.get_temp();
+                this->target_temperature = f_to_c(packet.get_temp());
                 did_change = true;
             }
-            if (this->current_temperature != packet.get_temp())
+            if (this->current_temperature != f_to_c(packet.get_temp()))
             {
-                this->current_temperature = packet.get_temp(); // Fake the current temperature
+                this->current_temperature = f_to_c(packet.get_temp());
                 did_change = true;
             }
             if (this->mode != mode_from_packet)
@@ -312,10 +317,10 @@ void JHSClimate::recv_from_ac()
             // we are adjusting
             if (this->steps_left_to_adjust_temp > 0)
             {
-                if (this->target_temperature != packet.get_temp())
+                if (c_to_f(this->target_temperature) != packet.get_temp())
                 {
                     auto packet_to_send = BUTTON_LOWER_TEMP;
-                    if (this->target_temperature > packet.get_temp())
+                    if (c_to_f(this->target_temperature) > packet.get_temp())
                     {
                         packet_to_send = BUTTON_HIGHER_TEMP;
                         ESP_LOGD(TAG, "Sending BUTTON_HIGHER_TEMP packet to AC");

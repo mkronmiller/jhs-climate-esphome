@@ -12,14 +12,13 @@
 using namespace esphome;
 
 const std::array<uint8_t, 3> KEEPALIVE_PACKET{0x30, 0x00, 0x8a};
-const std::array<uint8_t, 3> BUTTON_MODE{0x30, 0x01, 0x8b};
-const std::array<uint8_t, 3> BUTTON_LOWER_TEMP{0x30, 0x02, 0x8c};
-const std::array<uint8_t, 3> BUTTON_ON{0x30, 0x03, 0x8d};
-const std::array<uint8_t, 3> BUTTON_TIMER{0x30, 0x04, 0x8e};
-const std::array<uint8_t, 3> BUTTON_FAN{0x30, 0x05, 0x8f};
-// const std::array<uint8_t, 3> BUTTON_SWING{0x30, 0x06, 0x90};
-const std::array<uint8_t, 3> BUTTON_SLEEP{0x30, 0x07, 0x91};
-const std::array<uint8_t, 3> BUTTON_HIGHER_TEMP{0x30, 0x08, 0x92};
+const std::array<uint8_t, 3> BUTTON_MODE{0x30, 0x0c, 0x96};
+const std::array<uint8_t, 3> BUTTON_LOWER_TEMP{0x30, 0x0e, 0x98};
+const std::array<uint8_t, 3> BUTTON_ON{0x30, 0x10, 0x9a};
+const std::array<uint8_t, 3> BUTTON_TIMER{0x30, 0x0f, 0x99};
+const std::array<uint8_t, 3> BUTTON_FAN{0x30, 0x0a, 0x94};
+const std::array<uint8_t, 3> BUTTON_SLEEP{0x30, 0x0d, 0x97};
+const std::array<uint8_t, 3> BUTTON_HIGHER_TEMP{0x30, 0x0b, 0x95};
 const std::array<uint8_t, 3> BUTTON_UNIT_CHANGE{0x30, 0x09, 0x93};
 
 
