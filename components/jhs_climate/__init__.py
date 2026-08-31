@@ -4,15 +4,11 @@ from esphome.components import climate, binary_sensor
 from esphome.const import CONF_ID
 from esphome import pins
 
-
 DEPENDENCIES = []
 
-
-# JHSClimateComponent = cg.global_ns.class_(
-#     "JHSClimate", cg.Component, climate.Climate)
 JHSClimateComponent_ns = cg.esphome_ns.namespace("JHSClimate")
 JHSClimateComponent = JHSClimateComponent_ns.class_(
-    "JHSClimate", cg.Component)
+    "JHSClimate", cg.Component, climate.Climate)
 
 CONF_AC_TX_PIN = 'ac_tx_pin'
 CONF_AC_RX_PIN = 'ac_rx_pin'
@@ -20,24 +16,21 @@ CONF_PANEL_TX_PIN = 'panel_tx_pin'
 CONF_PANEL_RX_PIN = 'panel_rx_pin'
 CONF_WATER_FULL_SENSOR = 'water_full_sensor'
 
-CONFIG_SCHEMA = climate.CLIMATE_SCHEMA.extend(
+CONFIG_SCHEMA = climate.climate_schema(JHSClimateComponent).extend(
     {
-        cv.GenerateID(): cv.declare_id(JHSClimateComponent),
         cv.Required(CONF_AC_TX_PIN): pins.gpio_output_pin_schema,
         cv.Required(CONF_AC_RX_PIN): pins.gpio_input_pin_schema,
         cv.Required(CONF_PANEL_TX_PIN): pins.gpio_output_pin_schema,
         cv.Required(CONF_PANEL_RX_PIN): pins.gpio_input_pin_schema,
         cv.Required(CONF_WATER_FULL_SENSOR): binary_sensor.binary_sensor_schema(),
-        
     }
-)
+).extend(cv.COMPONENT_SCHEMA)
 
 
 async def to_code(config):
-    var = cg.new_Pvariable(config[CONF_ID])
+    var = await climate.new_climate(config)
     await cg.register_component(var, config)
-    await climate.register_climate(var, config)
-    
+
     water_full_sensor = await binary_sensor.new_binary_sensor(config[CONF_WATER_FULL_SENSOR])
     cg.add(var.set_water_full_sensor(water_full_sensor))
 
