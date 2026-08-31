@@ -2,7 +2,6 @@
 
 #include "esphome/core/log.h"
 #include "esp32-hal-rmt.h"
-#include "soc/rmt_struct.h"
 
 #include "jhs_recv_task.h"
 #include "esp32-hal.h"
@@ -59,20 +58,17 @@ void JHSClimate::setup()
 
 void JHSClimate::setup_rmt()
 {
-
-    this->rmt_panel_tx = rmtInit(this->panel_tx_pin_->get_pin(), true, RMT_MEM_192);
-    this->rmt_panel_tx_tick = rmtSetTick(this->rmt_panel_tx, 2500); // papieska wartość
+    this->rmt_panel_tx = this->panel_tx_pin_->get_pin();
+    rmtInit(this->rmt_panel_tx, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_3, 400000);
+    rmtSetEOT(this->rmt_panel_tx, 1);
+    this->rmt_panel_tx_tick = 2500;
     ESP_LOGI(TAG, "RMT panel tx tick: %f", this->rmt_panel_tx_tick);
 
-    this->rmt_ac_tx = rmtInit(this->ac_tx_pin_->get_pin(), true, RMT_MEM_192);
-    this->rmt_ac_tx_tick = rmtSetTick(this->rmt_ac_tx, 2500); // papieska wartość
+    this->rmt_ac_tx = this->ac_tx_pin_->get_pin();
+    rmtInit(this->rmt_ac_tx, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_3, 400000);
+    rmtSetEOT(this->rmt_ac_tx, 1);
+    this->rmt_ac_tx_tick = 2500;
     ESP_LOGI(TAG, "RMT ac tx tick: %f", this->rmt_ac_tx_tick);
-
-    // ugly hack to set all RMT channels to high on idle
-    for (int i = 0; i < 8; i++)
-    {
-        RMT.conf_ch[i].conf1.idle_out_lv = 1;
-    }
 
     ESP_LOGI(TAG, "RMT initialized");
 }
@@ -106,7 +102,6 @@ esphome::climate::ClimateTraits JHSClimate::traits()
 {
     // The capabilities of the climate device
     auto traits = esphome::climate::ClimateTraits();
-    traits.set_supports_current_temperature(true);
     traits.set_supported_modes({esphome::climate::CLIMATE_MODE_OFF,
                                 esphome::climate::CLIMATE_MODE_DRY,
                                 esphome::climate::CLIMATE_MODE_COOL,
@@ -398,7 +393,7 @@ void JHSClimate::recv_from_ac()
 }
 
 
-void JHSClimate::send_rmt_data(rmt_obj_t *rmt, std::vector<uint8_t> data)
+void JHSClimate::send_rmt_data(int rmt, std::vector<uint8_t> data)
 {
     ESP_LOGVV(TAG, "Sending RMT data: %s", bytes_to_hex2(data).c_str());
 
@@ -446,7 +441,7 @@ void JHSClimate::send_rmt_data(rmt_obj_t *rmt, std::vector<uint8_t> data)
     end.level1 = 1;
     end.duration1 = 200;
     rmt_data_to_send.push_back(end);
-    rmtWrite(rmt, rmt_data_to_send.data(), rmt_data_to_send.size());
+    rmtWrite(rmt, rmt_data_to_send.data(), rmt_data_to_send.size(), RMT_WAIT_FOR_EVER);
 }
 
 

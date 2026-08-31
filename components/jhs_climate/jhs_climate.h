@@ -44,8 +44,8 @@ protected:
     esphome::binary_sensor::BinarySensor *water_full_sensor;
     // esphome::ota::OTAComponent *OTAComponent =
 
-    rmt_obj_t *rmt_ac_tx;
-    rmt_obj_t *rmt_panel_tx;
+    int *rmt_ac_tx;
+    int *rmt_panel_tx;
 
     uint32_t last_adjustment = 0;
     const int ADJUSTMENT_INTERVAL = 100;
@@ -67,7 +67,7 @@ private:
     // setup helpers
     void setup_rmt();
 
-    void send_rmt_data(rmt_obj_t *rmt, std::vector<uint8_t> data);
+    void send_rmt_data(int rmt, std::vector<uint8_t> data);
 
     void recv_from_panel();
 
