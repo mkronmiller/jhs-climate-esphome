@@ -320,26 +320,36 @@ void JHSClimate::recv_from_ac()
             // we are adjusting
             if (this->steps_left_to_adjust_temp > 0)
             {
-                if (c_to_f(this->target_temperature) != packet.get_temp())
+                if (mode_from_packet == esphome::climate::CLIMATE_MODE_COOL)
                 {
-                    auto packet_to_send = BUTTON_LOWER_TEMP;
-                    if (c_to_f(this->target_temperature) > packet.get_temp())
+                    if (c_to_f(this->target_temperature) != packet.get_temp())
                     {
-                        packet_to_send = BUTTON_HIGHER_TEMP;
-                        ESP_LOGD(TAG, "Sending BUTTON_HIGHER_TEMP packet to AC");
+                        auto packet_to_send = BUTTON_LOWER_TEMP;
+                        if (c_to_f(this->target_temperature) > packet.get_temp())
+                        {
+                            packet_to_send = BUTTON_HIGHER_TEMP;
+                            ESP_LOGD(TAG, "Sending BUTTON_HIGHER_TEMP packet to AC");
+                        }
+                        else
+                        {
+                            ESP_LOGD(TAG, "Sending BUTTON_LOWER_TEMP packet to AC");
+                        }
+                        // create a vector from BUTTON_UP, which is an std::array
+                        std::vector<uint8_t> packet_vector(packet_to_send.begin(), packet_to_send.end());
+
+                        this->send_rmt_data(this->rmt_ac_tx, packet_vector);
+                        this->steps_left_to_adjust_temp--;
                     }
                     else
                     {
-                        ESP_LOGD(TAG, "Sending BUTTON_LOWER_TEMP packet to AC");
+                        this->steps_left_to_adjust_temp = 0;
                     }
-                    // create a vector from BUTTON_UP, which is an std::array
-                    std::vector<uint8_t> packet_vector(packet_to_send.begin(), packet_to_send.end());
-
-                    this->send_rmt_data(this->rmt_ac_tx, packet_vector);
-                    this->steps_left_to_adjust_temp--;
                 }
                 else
                 {
+                    // No setpoint is displayed outside cool mode, so there is nothing
+                    // for the button presses to converge on. Give up immediately.
+                    ESP_LOGD(TAG, "Not in cool mode, skipping temperature adjustment");
                     this->steps_left_to_adjust_temp = 0;
                 }
             }
