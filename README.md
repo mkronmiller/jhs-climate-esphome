@@ -137,8 +137,12 @@ POWER       0x30 0x10 0x9a
 - Requesting a target temperature only makes sense in cool mode — there's no
   setpoint on the display to converge on otherwise — so temperature
   adjustment is a no-op outside cool mode.
-- The AC's water-full bit is not yet independently confirmed against the
-  panel's own FULL indicator on this unit.
+- The status bits are not all where upstream put them: `fan`/`dehum` and
+  `water_full`/`timer` are each swapped relative to upstream's layout on this
+  panel. Both swaps were confirmed by diffing captures (see
+  [Adapting to a different unit](#adapting-to-a-different-unit)) rather than
+  assumed, but the water-full bit hasn't yet been cross-checked against the
+  panel's own FULL indicator light for full confidence.
 
 ## Adapting to a different unit
 

@@ -70,6 +70,13 @@ panel event, purpose unknown.
 `fan` and `dehum` are **swapped** relative to upstream and have been exchanged in
 the struct.
 
+`water_full` and `timer` were also swapped relative to upstream. Confirmed
+2026-09-04: shorting/opening the float switch in dehumidify mode produced a
+bursty on/off toggle of upstream's `timer` bit (byte 5 bit 7, i.e. `0x80`,
+the first status byte) — consistent with a float switch physically bouncing —
+while no TIMER button was pressed and upstream's `water_full` bit (byte 5 bit
+5, `0x20`) never moved. Exchanged in the struct to match.
+
 `fan_low` / `fan_high` are **never set** on this unit. Fan speed appears only as
 display digits `"F1"` / `"F2"` during the menu flash, so it is latched into
 `latched_fan_mode` whenever `first_digit == 0x71` ('F'). Consequence: fan speed is
@@ -117,10 +124,10 @@ blocking `delay(150)`.
 2. **Replace the `delay(150)` fan double-press** with a non-blocking state machine.
 3. **Ignore digits while the timer is displayed** — gate the temperature read on
    `!packet.timer`, or a timer countdown is read as a setpoint.
-4. **Water-full bit is unverified.** Shorting and opening the float switch in fan
-   mode produced no change in any packet byte. Retry in cool mode, and use the
-   panel's own FULL indicator as independent confirmation before trusting any bit.
-   Upstream's `water_full` bit has produced false positives.
+4. ~~**Water-full bit is unverified.**~~ Resolved 2026-09-04 — see "Status bits"
+   above: it was upstream's `timer` bit all along (fan mode showed no change
+   because the wrong bit was being watched). Struct updated; still worth
+   confirming once against the panel's own FULL indicator for full confidence.
 5. **Identify panel code `0x05`** and byte 6 bit 3.
 6. **Comment out** the raw `AC packet:` debug log when not capturing; it prints
    ~10x/second and contributes to "took a long time for an operation" warnings.
