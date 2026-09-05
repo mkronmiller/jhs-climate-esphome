@@ -353,6 +353,8 @@ void JHSClimate::recv_from_ac()
                     std::vector<uint8_t> packet_vector(packet_to_send.begin(), packet_to_send.end());
                     ESP_LOGD(TAG, "Sending BUTTON_FAN packet to AC");
                     this->send_rmt_data(this->rmt_ac_tx, packet_vector);
+                    delay(150);
+                    this->send_rmt_data(this->rmt_ac_tx, packet_vector);
                     this->steps_left_to_adjust_fan--;
                 }
                 else
