@@ -245,15 +245,17 @@ void JHSClimate::recv_from_ac()
         {
             mode_from_packet = esphome::climate::CLIMATE_MODE_DRY;
         }
-        esphome::climate::ClimateFanMode fan_from_packet = esphome::climate::CLIMATE_FAN_LOW;
-        if (packet.fan_high)
+        // This unit never sets the fan_low/fan_high status bits. Fan speed is
+        // only ever shown on the display as "F1"/"F2" during the menu flash,
+        // so latch it whenever we see it.
+        if (packet.first_digit == 0x71) // 'F'
         {
-            fan_from_packet = esphome::climate::CLIMATE_FAN_HIGH;
+            if (packet.second_digit == 0x06) // '1'
+                this->latched_fan_mode = esphome::climate::CLIMATE_FAN_LOW;
+            else if (packet.second_digit == 0x5B) // '2'
+                this->latched_fan_mode = esphome::climate::CLIMATE_FAN_HIGH;
         }
-        if (packet.fan_low)
-        {
-            fan_from_packet = esphome::climate::CLIMATE_FAN_LOW;
-        }
+        esphome::climate::ClimateFanMode fan_from_packet = this->latched_fan_mode;
         esphome::climate::ClimatePreset preset_from_packet = esphome::climate::CLIMATE_PRESET_NONE;
         if (packet.sleep) preset_from_packet = esphome::climate::CLIMATE_PRESET_SLEEP;
 

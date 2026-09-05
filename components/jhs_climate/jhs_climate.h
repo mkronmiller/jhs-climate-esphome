@@ -56,6 +56,7 @@ protected:
     bool water_full = false;
     uint32_t last_water_full = 0;
     const int WATER_FULL_INTERVAL = 3000;
+    esphome::climate::ClimateFanMode latched_fan_mode = esphome::climate::CLIMATE_FAN_LOW;
 
     // is_adjusting is set to true when a change was made externally (e.g. homeassistant) and we are in the process of pressing button
     bool is_adjusting();
