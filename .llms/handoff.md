@@ -71,11 +71,14 @@ panel event, purpose unknown.
 the struct.
 
 `water_full` and `timer` were also swapped relative to upstream. Confirmed
-2026-09-04: shorting/opening the float switch in dehumidify mode produced a
-bursty on/off toggle of upstream's `timer` bit (byte 5 bit 7, i.e. `0x80`,
-the first status byte) — consistent with a float switch physically bouncing —
-while no TIMER button was pressed and upstream's `water_full` bit (byte 5 bit
-5, `0x20`) never moved. Exchanged in the struct to match.
+2026-09-04 in two modes: shorting/opening the float switch in dehumidify mode
+produced a bursty on/off toggle of upstream's `timer` bit (byte 5 bit 7, i.e.
+`0x80`) — consistent with a float switch physically bouncing — while no TIMER
+button was pressed and upstream's `water_full` bit (byte 5 bit 5, `0x20`)
+never moved. Repeated in cool mode after swapping the struct: the same bit
+came with a simultaneous beep packet (a real full-tank alert), and the
+`water_full` binary_sensor published ON correctly. Exchanged in the struct
+to match; considered resolved.
 
 `fan_low` / `fan_high` are **never set** on this unit. Fan speed appears only as
 display digits `"F1"` / `"F2"` during the menu flash, so it is latched into
@@ -126,11 +129,12 @@ blocking `delay(150)`.
    `!packet.timer`, or a timer countdown is read as a setpoint.
 4. ~~**Water-full bit is unverified.**~~ Resolved 2026-09-04 — see "Status bits"
    above: it was upstream's `timer` bit all along (fan mode showed no change
-   because the wrong bit was being watched). Struct updated; still worth
-   confirming once against the panel's own FULL indicator for full confidence.
+   because the wrong bit was being watched). Confirmed in both dehumidify and
+   cool mode, the latter with a correlated beep packet and the `water_full`
+   binary_sensor publishing ON. Struct updated.
 5. **Identify panel code `0x05`** and byte 6 bit 3.
-6. **Comment out** the raw `AC packet:` debug log when not capturing; it prints
-   ~10x/second and contributes to "took a long time for an operation" warnings.
+6. ~~**Comment out** the raw `AC packet:` debug log~~ Done 2026-09-04 — commented
+   out in `recv_from_ac()`; uncomment when capturing packets for debugging.
 7. **README rewrite** for the repo: model, board revision, wiring diagram, and
    instructions for capturing button codes on other units, since they vary.
 

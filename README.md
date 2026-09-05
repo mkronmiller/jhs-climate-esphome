@@ -140,9 +140,10 @@ POWER       0x30 0x10 0x9a
 - The status bits are not all where upstream put them: `fan`/`dehum` and
   `water_full`/`timer` are each swapped relative to upstream's layout on this
   panel. Both swaps were confirmed by diffing captures (see
-  [Adapting to a different unit](#adapting-to-a-different-unit)) rather than
-  assumed, but the water-full bit hasn't yet been cross-checked against the
-  panel's own FULL indicator light for full confidence.
+  [Adapting to a different unit](#adapting-to-a-different-unit)) — the
+  water-full swap in particular by triggering the float switch in two
+  different modes and confirming the `water_full` binary_sensor published
+  correctly, with a real full-tank beep packet arriving at the same moment.
 
 ## Adapting to a different unit
 

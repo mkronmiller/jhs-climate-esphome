@@ -218,7 +218,10 @@ void JHSClimate::recv_from_ac()
         }
         JHSAcPacket packet = *packet_optional;
         ESP_LOGVV(TAG, "Received new packet from AC: %s", packet.to_string().c_str());
-        ESP_LOGD(TAG, "AC packet: %s", bytes_to_hex2(packet_vector).c_str());
+        // Prints ~10x/sec and contributes to "took a long time for an operation"
+        // warnings. Uncomment when capturing packets for debugging (see
+        // "Adapting to a different unit" in README.md).
+        // ESP_LOGD(TAG, "AC packet: %s", bytes_to_hex2(packet_vector).c_str());
 
 
         // Modify the packet 
