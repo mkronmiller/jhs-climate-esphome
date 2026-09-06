@@ -147,10 +147,26 @@ The mode-adjustment block had a related but more dangerous version of the
 same bug: it picks `BUTTON_ON` (a power *toggle*, not "turn on") whenever
 `mode_from_packet == OFF`, which an asleep-but-still-running unit also
 satisfies — meaning a mode change requested at the wrong moment could have
-sent a power-off to a unit that was actually on. Fixed the same way: an
-ambiguous OFF reading no longer qualifies, falling through to `BUTTON_MODE`
-instead (assumed safe to no-op if the unit really is off — not yet directly
-tested).
+sent a power-off to a unit that was actually on. First fix attempt (requiring
+`!display_asleep` before trusting the OFF reading) overcorrected and broke
+turning the unit **on** from a genuinely off state: a real off, once past its
+one beep-carrying transition packet, is *just as silent and ambiguous* as a
+sleeping display — `display_asleep` can't tell them apart from a single
+packet alone, since the beep only marks the transition, not the ongoing
+state. Confirmed 2026-09-05: turning on from OFF looped `Sending BUTTON_MODE`
+every ~10s forever (MODE presumably no-ops while genuinely off), never
+sending `BUTTON_ON`.
+
+Properly fixed by adding `mode_before_adjustment` (`jhs_climate.h`/`.cpp`):
+`control()` now snapshots `this->mode` into it *before* overwriting `mode`
+with the requested target. That's the last mode actually confirmed before
+this adjustment began, and it's what resolves the ambiguity: if it was OFF,
+an ambiguous reading during the adjustment is still assumed OFF (nothing
+since has un-confirmed it) and `BUTTON_ON` is sent; if it was a real running
+mode, ambiguous stays non-committal and falls through to `BUTTON_MODE`
+instead. Both directions confirmed by log evidence; not yet tested together
+in one session (turn on from real off, then request a mode change while
+genuinely asleep-but-running, back to back).
 
 **Not yet fixed**, and lower priority since it needs `adjust_preset` to be
 in-flight at the exact moment the display is asleep: the sleep-preset block

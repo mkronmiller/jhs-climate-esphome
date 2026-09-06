@@ -53,6 +53,10 @@ protected:
     int steps_left_to_adjust_temp = 0;
     int steps_left_to_adjust_fan = 0;
     bool adjust_preset = false;
+    // Last confirmed (non-ambiguous) mode before the current mode adjustment
+    // began. Used to tell a genuinely-off unit apart from one that's merely
+    // asleep-but-running when a mid-adjustment packet is ambiguous.
+    esphome::climate::ClimateMode mode_before_adjustment = esphome::climate::CLIMATE_MODE_OFF;
     bool water_full = false;
     uint32_t last_water_full = 0;
     const int WATER_FULL_INTERVAL = 3000;
