@@ -71,28 +71,51 @@ the pin to ground.** That gives ~3.33V logic levels into the ESP32's input
 ## Example configuration
 
 ```yaml
-external_components:
-  - source: github://mkronmiller/jhs-climate-esphome
-    refresh: 0s # required, otherwise component edits are not picked up
-
 esphome:
-  platform: ESP32
-  board: esp32dev
+  name: my-ac
+  friendly_name: My AC
 
+esp32:
+  variant: esp32
+  framework:
+    type: arduino # required — the code uses pinMode/attachInterrupt/micros/RMT
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/mkronmiller/jhs-climate-esphome
+      ref: master
+    refresh: 0s # re-fetch this ref on every build instead of caching it
+
+# jhs_climate registers itself as its own top-level component, not as a
+# "climate:" platform — but it still needs these two domains present
+# (even empty) so their base support gets pulled in.
 climate:
-  - platform: jhs_climate
-    id: jhsclimate
-    name: JHS Climate
-    ac_tx_pin: 26 # data going from the ESP to the AC mainboard (key line)
-    ac_rx_pin: 25 # data coming from the AC mainboard to the ESP (display line)
-    panel_rx_pin: 33 # data coming from the control panel to the ESP (key line — 1K/2K divider, NOT a level shifter, see Wiring above)
-    panel_tx_pin: 32 # data going from the ESP to the control panel (display line)
-    water_full_sensor:
-      name: "Water full"
+binary_sensor:
+
+jhs_climate:
+  id: jhsclimate
+  name: "JHS Climate"
+  ac_tx_pin: 26 # data going from the ESP to the AC mainboard (key line)
+  ac_rx_pin: 25 # data coming from the AC mainboard to the ESP (display line)
+  panel_rx_pin: 33 # data coming from the control panel to the ESP (key line — 1K/2K divider, NOT a level shifter, see Wiring above)
+  panel_tx_pin: 32 # data going from the ESP to the control panel (display line)
+  water_full_sensor:
+    name: "Water full"
 ```
 
-`framework: arduino` is required — this is the ESPHome default for ESP32, so
-you only need to set it explicitly if something else in your config changes it.
+If you're developing against a checkout of this repo rather than flashing
+from GitHub directly, ESPHome also accepts a local source (no `ref`/`refresh`,
+and no push needed before each build — but the path has to be reachable from
+wherever ESPHome actually compiles, e.g. not from a separate HAOS/ESPHome
+Builder add-on host):
+
+```yaml
+external_components:
+  - source:
+      type: local
+      path: /path/to/jhs-climate-esphome/components
+```
 
 ## Protocol summary
 
