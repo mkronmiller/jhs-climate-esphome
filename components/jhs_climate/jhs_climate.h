@@ -52,6 +52,14 @@ protected:
     int steps_left_to_adjust_mode = 0;
     int steps_left_to_adjust_temp = 0;
     int steps_left_to_adjust_fan = 0;
+    // FAN needs a slower retry cadence than the other adjustments: a press
+    // spaced only ADJUSTMENT_INTERVAL (100ms) after the previous one doesn't
+    // reliably register as a second, distinct press to the AC (confirmed via
+    // capture — a 150ms gap wasn't enough either). Retried independently of
+    // last_adjustment/ADJUSTMENT_INTERVAL until latched_fan_mode confirms
+    // convergence or the budget below runs out.
+    uint32_t last_fan_adjustment = 0;
+    const int FAN_ADJUSTMENT_INTERVAL = 500;
     bool adjust_preset = false;
     // Last confirmed (non-ambiguous) mode before the current mode adjustment
     // began. Used to tell a genuinely-off unit apart from one that's merely

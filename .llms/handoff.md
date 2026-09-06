@@ -164,9 +164,28 @@ this adjustment began, and it's what resolves the ambiguity: if it was OFF,
 an ambiguous reading during the adjustment is still assumed OFF (nothing
 since has un-confirmed it) and `BUTTON_ON` is sent; if it was a real running
 mode, ambiguous stays non-committal and falls through to `BUTTON_MODE`
-instead. Both directions confirmed by log evidence; not yet tested together
-in one session (turn on from real off, then request a mode change while
-genuinely asleep-but-running, back to back).
+instead.
+
+**Confirmed 2026-09-05, both directions in one session**
+(`off → fan → [display sleep] → cool 72 → [display sleep] → [display off] →
+cool 76`):
+- Turned on from a genuinely off unit: silent all-zero packet,
+  `mode_before_adjustment` still `OFF` from before → correctly sent
+  `BUTTON_ON`, converged to `FAN_ONLY`.
+- Mode changed (`FAN_ONLY` → `COOL`) while the packet was already silent
+  (asleep, not off): `mode_before_adjustment` was `FAN_ONLY` (confirmed,
+  non-OFF) → correctly sent `BUTTON_MODE` instead of the dangerous
+  `BUTTON_ON`, converged to `COOL` at the requested temp.
+- `mode` held `COOL` through two further long silent stretches (one after
+  reaching `cool 72`, a longer one before `cool 76`) — never misreported as
+  `OFF` in the climate log.
+- Temperature bump (`72°F` → `~76°F`) requested right after one of those
+  silent stretches converged cleanly (5× `BUTTON_HIGHER_TEMP`, no
+  cancellation) — the TODO #1 lockout fix holding up under the same
+  ambiguity too.
+
+All three fixes (display-sleep state preservation, temp-lockout ambiguity,
+mode BUTTON_ON/BUTTON_MODE disambiguation) considered resolved.
 
 **Not yet fixed**, and lower priority since it needs `adjust_preset` to be
 in-flight at the exact moment the display is asleep: the sleep-preset block
@@ -176,6 +195,36 @@ default here — `BUTTON_SLEEP` toggles, so guessing wrong is just as bad as
 not sending anything, and not sending anything risks stalling forever if
 nothing else happens to wake the display. Needs a real capture before
 deciding how to handle it.
+
+### Fan speed double-press (TODO #2, resolved 2026-09-05)
+Confirmed by capture why this needed two separate Home Assistant clicks
+sometimes: the blocking `delay(150)` between the two `BUTTON_FAN` sends
+wasn't a reliable gap — one HA "Fan High" request sent both presses only
+150ms apart, the AC responded by showing `"F1"` (still LOW, unchanged) for
+~4.6s and then reverted with nothing changed; a second, separate HA click
+(presses naturally seconds apart) converged to `"F2"`/HIGH immediately.
+
+Replaced with a real retry loop instead of a single blocking gamble:
+`steps_left_to_adjust_fan` is now a retry budget (6, was 1) and each retry is
+gated by its own `last_fan_adjustment`/`FAN_ADJUSTMENT_INTERVAL` (500ms,
+independent of the shared `ADJUSTMENT_INTERVAL` used by temp/mode) instead of
+a blocking `delay()`. One press per eligible iteration; keeps retrying until
+`latched_fan_mode` (from the real `"F1"`/`"F2"` digit sighting) confirms
+convergence, up to the budget. 500ms is a guess informed by the ~4.6s window
+the capture showed the speed digits staying up — not yet re-tested against
+hardware.
+
+There's a second, distinct contributor visible in the same capture: the
+display was asleep when the FAN command was sent, and the very first
+response packet showed the *temp* display waking up (with a beep) rather
+than the fan menu — i.e. that first press was spent purely on waking the
+unit, same as the POWER button's wake-vs-toggle behavior documented above
+under "Display sleep vs. real power-off". So from asleep, FAN needs *three*
+real presses to land (wake, open menu, advance), not two — the old
+two-press code could never have worked from a cold/asleep start regardless
+of timing. The retry loop above should cover this automatically (6 attempts
+comfortably covers the 3 needed), but it's only confirmed for the
+already-awake case so far; worth a specific test starting from asleep.
 
 ### Temperature units
 The unit displays Fahrenheit; ESPHome climate is Celsius internally. `f_to_c()` /
@@ -213,7 +262,9 @@ blocking `delay(150)`.
    counter. Without this, requesting a temperature in fan mode fires all 24 button
    presses and never converges, because there is no setpoint on the display to
    match. HA's climate card does not reliably hide the control.
-2. **Replace the `delay(150)` fan double-press** with a non-blocking state machine.
+2. ~~**Replace the `delay(150)` fan double-press**~~ Resolved 2026-09-05 — see
+   "Fan speed double-press" above. Non-blocking retry loop, timing not yet
+   re-tested against hardware.
 3. **Ignore digits while the timer is displayed** — gate the temperature read on
    `!packet.timer`, or a timer countdown is read as a setpoint.
 4. ~~**Water-full bit is unverified.**~~ Resolved 2026-09-04 — see "Status bits"

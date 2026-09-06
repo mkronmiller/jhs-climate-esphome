@@ -98,7 +98,12 @@ void JHSClimate::control(const esphome::climate::ClimateCall &call)
     if (call.get_fan_mode().has_value())
     {
         this->fan_mode = call.get_fan_mode().value();
-        this->steps_left_to_adjust_fan = 1;
+        // A retry budget, not a single-shot attempt: each retry is spaced
+        // FAN_ADJUSTMENT_INTERVAL apart (see recv_from_ac()) and only fires
+        // while latched_fan_mode still disagrees, so this is a worst-case
+        // ceiling (~3s at the current interval), not something normally
+        // fully spent.
+        this->steps_left_to_adjust_fan = 6;
     }
     if (call.get_preset().has_value())
     {
@@ -386,15 +391,20 @@ void JHSClimate::recv_from_ac()
             {
                 if (this->fan_mode != fan_from_packet)
                 {
-                    auto packet_to_send = BUTTON_FAN;
+                    // Only one press per FAN_ADJUSTMENT_INTERVAL — see the
+                    // member declaration for why. If it's not time yet, just
+                    // wait for a later iteration rather than sending early.
+                    if (esphome::millis() - this->last_fan_adjustment >= (uint32_t)FAN_ADJUSTMENT_INTERVAL)
+                    {
+                        auto packet_to_send = BUTTON_FAN;
 
-                    // create a vector from BUTTON_FAN, which is an std::array
-                    std::vector<uint8_t> packet_vector(packet_to_send.begin(), packet_to_send.end());
-                    ESP_LOGD(TAG, "Sending BUTTON_FAN packet to AC");
-                    this->send_rmt_data(this->rmt_ac_tx, packet_vector);
-                    delay(150);
-                    this->send_rmt_data(this->rmt_ac_tx, packet_vector);
-                    this->steps_left_to_adjust_fan--;
+                        // create a vector from BUTTON_FAN, which is an std::array
+                        std::vector<uint8_t> packet_vector(packet_to_send.begin(), packet_to_send.end());
+                        ESP_LOGD(TAG, "Sending BUTTON_FAN packet to AC");
+                        this->send_rmt_data(this->rmt_ac_tx, packet_vector);
+                        this->last_fan_adjustment = esphome::millis();
+                        this->steps_left_to_adjust_fan--;
+                    }
                 }
                 else
                 {
