@@ -167,6 +167,14 @@ POWER       0x30 0x10 0x9a
   water-full swap in particular by triggering the float switch in two
   different modes and confirming the `water_full` binary_sensor published
   correctly, with a real full-tank beep packet arriving at the same moment.
+- **The display sleeps after ~40–60s idle** (dims/blanks, presumably so it's
+  not glaring in a bedroom overnight) and broadcasts the exact same all-zero
+  packet as a genuine power-off while asleep — compressor included, it just
+  keeps running. The only reliable tell is a beep: a real power-off (or any
+  other real state change) arrives with one, the display timing out on its
+  own never does. The climate entity holds its last known mode/preset through
+  a silent all-zero packet and only follows it to OFF/NONE once a beep
+  confirms the change is real.
 
 ## Adapting to a different unit
 

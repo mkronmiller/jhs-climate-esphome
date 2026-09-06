@@ -223,8 +223,15 @@ void JHSClimate::recv_from_ac()
         // "Adapting to a different unit" in README.md).
         ESP_LOGD(TAG, "AC packet: %s", bytes_to_hex2(packet_vector).c_str());
 
+        // Captured before the is_adjusting() mutation below can zero it out.
+        // A real state change (confirmed power-off, mode change, the display
+        // waking back up) always arrives with a beep; the display blanking
+        // itself after its own idle timeout (a power-saving feature, nothing
+        // to do with the AC actually turning off) does not. See "Display
+        // sleep vs. real power-off" in handoff.md.
+        bool packet_confirmed_change = packet.beep_amount > 0 && packet.beep_length > 0;
 
-        // Modify the packet 
+        // Modify the packet
         packet.wifi = !wifi::global_wifi_component->is_connected();
         if (is_adjusting()){
             packet.beep_amount = 0;
@@ -248,6 +255,13 @@ void JHSClimate::recv_from_ac()
         {
             mode_from_packet = esphome::climate::CLIMATE_MODE_DRY;
         }
+        // An all-zero packet is ambiguous: it's what a genuine power-off looks
+        // like, but it's also what this unit sends while its display is
+        // merely dimmed/asleep and the compressor is still running unchanged.
+        // The two are only distinguishable by the beep: a real off arrives
+        // with one, a display timeout doesn't. Don't downgrade to OFF on the
+        // silent version — just leave the last known mode alone.
+        bool display_asleep = mode_from_packet == esphome::climate::CLIMATE_MODE_OFF && !packet_confirmed_change;
         // This unit never sets the fan_low/fan_high status bits. Fan speed is
         // only ever shown on the display as "F1"/"F2" during the menu flash,
         // so latch it whenever we see it.
@@ -277,7 +291,7 @@ void JHSClimate::recv_from_ac()
                 this->current_temperature = f_to_c(packet.get_temp());
                 did_change = true;
             }
-            if (this->mode != mode_from_packet)
+            if (!display_asleep && this->mode != mode_from_packet)
             {
                 this->mode = mode_from_packet;
                 did_change = true;
@@ -287,7 +301,7 @@ void JHSClimate::recv_from_ac()
                 this->fan_mode = fan_from_packet;
                 did_change = true;
             }
-            if (this->preset != preset_from_packet)
+            if (!display_asleep && this->preset != preset_from_packet)
             {
                 this->preset = preset_from_packet;
                 did_change = true;

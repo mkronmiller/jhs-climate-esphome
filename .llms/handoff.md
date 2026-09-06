@@ -88,6 +88,44 @@ unknown at boot until the speed is displayed once.
 Byte 6 bit 3 (upstream calls it `wifi`) is set in cool mode and clear in fan mode.
 Actual meaning unknown.
 
+### Display sleep vs. real power-off
+This panel dims/blanks its display after roughly 40–60s of no button
+interaction (a power-saving feature — quiet at night in a bedroom — not
+related to this mod). While asleep, the AC broadcasts the exact same all-zero
+packet (`9000000000000000ea`) documented above for "AC off", **including a
+cleared `power` bit** — indistinguishable at the byte level from a genuine
+power-off.
+
+Confirmed 2026-09-05: waking the display (one physical POWER press while
+asleep) produced a packet showing the AC's true, unchanged state (still
+`COOL`, same target temp, as if nothing had happened) — proof the compressor
+had kept running the whole time the display was dark. A second press actually
+turned the AC off, and *that* packet — otherwise identical, all-zero — carried
+a beep (`beep_amount`/`beep_length` both nonzero). Every "just sleeping"
+capture across three separate logs had `beep_amount == 0`.
+
+So the beep is the only distinguishing signal: a real state transition (power
+off, mode change, the display waking up) always arrives with one; the display
+timing out on its own never does. Fixed in `recv_from_ac()` by capturing
+`packet.beep_amount`/`beep_length` before the `is_adjusting()` mutation can
+zero them, and refusing to downgrade `mode` (and `preset`, which has the same
+issue via `packet.sleep`) to what the all-zero packet implies unless that
+beep is present. Not yet re-tested after the fix (needs another display-sleep
+cycle to confirm the climate entity now holds its last real mode/preset
+through the blank period, and still flips to OFF/NONE the moment a real
+beep-confirmed off packet arrives).
+
+Also observed a physical POWER button code this fork hadn't seen before —
+`0x30 0x03 0x8d` — sent for *both* the wake press and the actual toggle-off
+press while the display was asleep, distinct from the `0x30 0x10 0x9a` this
+fork already maps to `POWER`/`BUTTON_ON` (which was established with the
+display already awake). The panel's own MCU appears to decide whether a given
+POWER press is a "wake" or a "toggle" internally — the wire code alone doesn't
+distinguish them. Not currently handled specially; both arrive as "unknown
+packet from panel" today and are forwarded to the AC unmodified, which is
+harmless since the AC's own logic (not ours) is what decides what the press
+means.
+
 ### Temperature units
 The unit displays Fahrenheit; ESPHome climate is Celsius internally. `f_to_c()` /
 `c_to_f()` helpers convert on read, and all comparisons in the adjustment loop are
