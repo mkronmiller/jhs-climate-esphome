@@ -126,6 +126,41 @@ packet from panel" today and are forwarded to the AC unmodified, which is
 harmless since the AC's own logic (not ours) is what decides what the press
 means.
 
+**Confirmed 2026-09-05 (same day) the display-sleep ambiguity also broke the
+adjustment loop**, not just state readback. Requesting a new target
+temperature landed on a silent all-zero packet: `mode_from_packet` read `OFF`,
+the `steps_left_to_adjust_temp` block (TODO #1's cool-mode lockout) mistook
+that for "genuinely not in cool mode" and cancelled the whole adjustment
+before sending a single button — confirmed in the log by the target
+snapping back to the old value within ~200ms with zero
+`Sending BUTTON_HIGHER_TEMP`/`LOWER_TEMP` lines anywhere nearby. A retry after
+the display had woken back up worked immediately.
+
+Fixed by also allowing the send when `display_asleep` is true (only a
+*confirmed* non-cool mode reading now cancels the adjustment). Since
+`packet.get_temp()` reads `-1` while asleep, the existing higher/lower
+comparison naturally always picks `BUTTON_HIGHER_TEMP` in that case — that's
+fine, it's just a wake nudge; the real digits (and correct direction) show up
+on the next packet once the AC responds.
+
+The mode-adjustment block had a related but more dangerous version of the
+same bug: it picks `BUTTON_ON` (a power *toggle*, not "turn on") whenever
+`mode_from_packet == OFF`, which an asleep-but-still-running unit also
+satisfies — meaning a mode change requested at the wrong moment could have
+sent a power-off to a unit that was actually on. Fixed the same way: an
+ambiguous OFF reading no longer qualifies, falling through to `BUTTON_MODE`
+instead (assumed safe to no-op if the unit really is off — not yet directly
+tested).
+
+**Not yet fixed**, and lower priority since it needs `adjust_preset` to be
+in-flight at the exact moment the display is asleep: the sleep-preset block
+reads `packet.sleep` the same way and could send a spurious/wrong-direction
+`BUTTON_SLEEP` when ambiguous. Unlike the temp/mode fixes, there's no safe
+default here — `BUTTON_SLEEP` toggles, so guessing wrong is just as bad as
+not sending anything, and not sending anything risks stalling forever if
+nothing else happens to wake the display. Needs a real capture before
+deciding how to handle it.
+
 ### Temperature units
 The unit displays Fahrenheit; ESPHome climate is Celsius internally. `f_to_c()` /
 `c_to_f()` helpers convert on read, and all comparisons in the adjustment loop are

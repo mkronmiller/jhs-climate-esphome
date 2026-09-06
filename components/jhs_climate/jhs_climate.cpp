@@ -337,8 +337,15 @@ void JHSClimate::recv_from_ac()
             // we are adjusting
             if (this->steps_left_to_adjust_temp > 0)
             {
-                if (mode_from_packet == esphome::climate::CLIMATE_MODE_COOL)
+                if (mode_from_packet == esphome::climate::CLIMATE_MODE_COOL || display_asleep)
                 {
+                    // display_asleep means we can't actually see the current
+                    // setpoint digits (packet.get_temp() reads -1), so this
+                    // naturally always picks BUTTON_HIGHER_TEMP below — that's
+                    // fine, it's only being sent to wake the display/AC back
+                    // up so the *next* packet reveals the real digits to
+                    // converge against. Confirmed non-cool modes (below) are
+                    // the only case with genuinely no setpoint to aim for.
                     if (c_to_f(this->target_temperature) != packet.get_temp())
                     {
                         auto packet_to_send = BUTTON_LOWER_TEMP;
@@ -403,7 +410,14 @@ void JHSClimate::recv_from_ac()
                 if (this->mode != mode_from_packet)
                 {
                     auto packet_to_send = BUTTON_MODE;
-                    if (this->mode == esphome::climate::ClimateMode::CLIMATE_MODE_OFF || mode_from_packet == esphome::climate::CLIMATE_MODE_OFF)
+                    // BUTTON_ON is a power toggle, not a plain "turn on" — sending
+                    // it to a unit that's actually already running would turn it
+                    // off. Only trust mode_from_packet's OFF reading when it's not
+                    // just the display asleep (still cooling, all-zero, no beep);
+                    // an ambiguous read falls through to BUTTON_MODE instead, which
+                    // no-ops if the unit really is off.
+                    if (this->mode == esphome::climate::ClimateMode::CLIMATE_MODE_OFF ||
+                        (mode_from_packet == esphome::climate::CLIMATE_MODE_OFF && !display_asleep))
                     {
                         packet_to_send = BUTTON_ON;
                         ESP_LOGD(TAG, "Sending BUTTON_ON packet to AC");
