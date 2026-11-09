@@ -334,6 +334,9 @@ void JHSClimate::recv_from_ac()
         esphome::climate::ClimateFanMode fan_from_packet = this->latched_fan_mode;
         esphome::climate::ClimatePreset preset_from_packet = esphome::climate::CLIMATE_PRESET_NONE;
         if (packet.sleep) preset_from_packet = esphome::climate::CLIMATE_PRESET_SLEEP;
+        if (!display_asleep)
+            this->last_confirmed_preset = preset_from_packet;
+        esphome::climate::ClimatePreset real_preset = display_asleep ? this->last_confirmed_preset : preset_from_packet;
 
         if (!this->is_adjusting())
         {
@@ -486,14 +489,32 @@ void JHSClimate::recv_from_ac()
                     this->steps_left_to_adjust_fan = 0;
                 }
             }
-            if (this->preset != preset_from_packet)
+            // Only when a preset change was actually requested, and compared
+            // against real_preset: an asleep display reads sleep=0, so the old
+            // unconditional `preset != preset_from_packet` check pressed SLEEP
+            // during *any* adjustment while in the SLEEP preset (confirmed
+            // 2026-11-08: OFF from HA sent BUTTON_SLEEP, which only woke the
+            // display).
+            if (this->adjust_preset)
             {
-                auto packet_to_send = BUTTON_SLEEP;
-                // create a vector from BUTTON_SLEEP, which is an std::array
-                std::vector<uint8_t> packet_vector(packet_to_send.begin(), packet_to_send.end());
-                ESP_LOGD(TAG, "Sending BUTTON_SLEEP packet to AC");
-                this->send_rmt_data(this->rmt_ac_tx, packet_vector);
-                this->adjust_preset = false;
+                if (this->preset != real_preset)
+                {
+                    auto packet_to_send = BUTTON_SLEEP;
+                    // create a vector from BUTTON_SLEEP, which is an std::array
+                    std::vector<uint8_t> packet_vector(packet_to_send.begin(), packet_to_send.end());
+                    ESP_LOGD(TAG, "Sending BUTTON_SLEEP packet to AC");
+                    this->send_rmt_data(this->rmt_ac_tx, packet_vector);
+                    // BUTTON_SLEEP toggles, so it's single-shot once the
+                    // display is awake. From asleep, the first press only
+                    // wakes it, so keep the request open and re-check against
+                    // the real reading that follows.
+                    if (!display_asleep)
+                        this->adjust_preset = false;
+                }
+                else
+                {
+                    this->adjust_preset = false;
+                }
             }
             if (this->steps_left_to_adjust_mode > 0)
             {

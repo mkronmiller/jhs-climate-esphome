@@ -241,6 +241,16 @@ off from asleep now sends two `BUTTON_ON`s: wake (reveals COOL), then toggle
 (beep-carrying OFF confirms and ends the loop). Not yet re-tested on
 hardware.
 
+Same day, second capture (firmware was still the pre-fix build — the commit
+hadn't been pushed and the YAML pulls `master` from GitHub): with the SLEEP
+preset on, OFF-from-asleep sent `BUTTON_SLEEP` instead, which only woke the
+display. The preset block below ("Not yet fixed") never checked
+`adjust_preset` and compared against `packet.sleep`, which reads 0 while
+asleep, so *any* adjustment while asleep in SLEEP preset pressed SLEEP. Now
+gated on `adjust_preset` and compared against `last_confirmed_preset`; from
+asleep the request stays open after the first (wake) press and re-checks
+against the real reading. Not yet tested on hardware.
+
 **Not yet fixed**, and lower priority since it needs `adjust_preset` to be
 in-flight at the exact moment the display is asleep: the sleep-preset block
 reads `packet.sleep` the same way and could send a spurious/wrong-direction

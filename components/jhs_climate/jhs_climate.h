@@ -67,6 +67,8 @@ protected:
     // state as of the last time we could actually see it. Used in place of
     // the packet's own reading while the display is asleep.
     esphome::climate::ClimateMode last_confirmed_mode = esphome::climate::CLIMATE_MODE_OFF;
+    // Same idea for the sleep preset: packet.sleep reads 0 while asleep.
+    esphome::climate::ClimatePreset last_confirmed_preset = esphome::climate::CLIMATE_PRESET_NONE;
     bool water_full = false;
     uint32_t last_water_full = 0;
     const int WATER_FULL_INTERVAL = 3000;
