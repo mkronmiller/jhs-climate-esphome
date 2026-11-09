@@ -70,6 +70,20 @@ protected:
     const int WATER_FULL_INTERVAL = 3000;
     esphome::climate::ClimateFanMode latched_fan_mode = esphome::climate::CLIMATE_FAN_LOW;
 
+    // Link watchdogs. Since both wires are cut with the ESP in the middle, a
+    // packet we fail to decode is a packet the other side never receives.
+    // While the AC is off it only talks every ~10s, so losing one or two in a
+    // row leaves the panel silent long enough to raise E3. If a direction goes
+    // quiet longer than its normal cadence, re-send the last good frame
+    // (AC -> panel) or a keepalive (panel -> AC) to fill the gap.
+    uint32_t last_sent_to_panel = 0;
+    uint32_t last_sent_to_ac = 0;
+    bool have_last_ac_packet = false;
+    JHSAcPacket last_ac_packet;
+    const uint32_t AC_TO_PANEL_WATCHDOG = 11000;  // AC cadence when off: ~10s
+    const uint32_t PANEL_TO_AC_WATCHDOG = 5000;   // panel keepalive: ~3.9s
+    void check_link_watchdogs();
+
     // is_adjusting is set to true when a change was made externally (e.g. homeassistant) and we are in the process of pressing button
     bool is_adjusting();
 

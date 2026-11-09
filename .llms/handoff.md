@@ -58,13 +58,55 @@ UP          0x30 0x0b 0x95
 MODE        0x30 0x0c 0x96
 SLEEP       0x30 0x0d 0x97
 DOWN        0x30 0x0e 0x98
-TIMER       0x30 0x0f 0x99
+TIMER       0x30 0x0f 0x99   (weak evidence — see below, likely wrong)
 POWER       0x30 0x10 0x9a
 UNIT_CHANGE 0x30 0x09 0x93   (unverified, inherited from upstream)
 ```
 
 `0x30 0x05 0x8f` has been observed once with a valid checksum — an unmapped
-panel event, purpose unknown.
+panel event, purpose unknown. Possibly explained by the context-dependent
+codes finding just below.
+
+**Manually setting the timer**, resolved 2026-09-06. Same physical AC unit
+and panel throughout this whole project (confirmed — a separate C6-based rig
+tapped the identical ribbon, only the tap hardware and ESP differed), so this
+isn't a hardware-revision difference:
+
+- Panel code `0x30 0x01 0x8b` opens the timer duration-set screen — the AC's
+  `timer` status bit goes high right after, directly captured. `0x30 0x02
+  0x8c` increments the selected hour count — digit bytes read `"01"`,
+  `"02"`, `"03"`, `"04"` after three presses. This is the trustworthy account:
+  real byte-level capture, with the status bit corroborating it.
+- The `TIMER = 0x30 0x0f 0x99` mapping above is **weaker than it looks**: it
+  came from one occurrence in a single earlier log, matched by elimination
+  against a self-reported action ("hit timer, set to 4"), with no status-bit
+  corroboration. A related claim — that repeatedly pressing that same TIMER
+  button cycles the value 1→24 — turned out to be pure inference from a
+  vague self-report ("timer → 1 to 24 → 24 to 1"), never an actual
+  code-level observation, and is retracted. Likely `0x01`/`0x02` are the real
+  codes and `0x0f` is wrong, but not yet disproven.
+- A behavioral report from elsewhere (~500ms alternating blink between the
+  value and a blanked frame, ~5s no-input auto-accept, double-press to
+  cancel) came from a rig that sampled this pulse-width protocol with a UART
+  peripheral at 2400 baud — that produces consistent-*looking* but fictitious
+  byte sequences (its "TIMER" read as `00 3C 9C BD 3C F5`, not real protocol
+  bytes), so none of it is byte-comparable against captures here. Treat it as
+  unverified behavioral color, not evidence, until confirmed on this rig.
+- Independent of which code is right: **the timer screen's buttons are
+  contextual** — `UP`/`DOWN`, pressed while it's open, adjust the timer
+  instead of the temperature, not the AC's normal mode/temp controls. Already
+  handled here: the temp-adjustment loop defers entirely while `packet.timer`
+  is set, so it can never send a temp button that would actually land on the
+  timer instead.
+
+**New hypothesis, untested**: `0x01`/`0x02` are upstream's original MODE and
+LOWER_TEMP codes (from before this fork found the `0x0A`–`0x10` range) —
+meaning the panel may reuse a *different, context-dependent code table* while
+a sub-screen like the timer setup is open, rather than each physical button
+having one fixed code. If true, this would also explain the stray `0x05`
+above. **Worth a direct test**: with the timer screen open, press each
+physical button in turn (FAN, UP, MODE, SLEEP, DOWN, POWER, TIMER) and log
+the code for each; then repeat with the main screen showing, for comparison.
 
 ### Status bits
 `fan` and `dehum` are **swapped** relative to upstream and have been exchanged in
@@ -210,9 +252,17 @@ gated by its own `last_fan_adjustment`/`FAN_ADJUSTMENT_INTERVAL` (500ms,
 independent of the shared `ADJUSTMENT_INTERVAL` used by temp/mode) instead of
 a blocking `delay()`. One press per eligible iteration; keeps retrying until
 `latched_fan_mode` (from the real `"F1"`/`"F2"` digit sighting) confirms
-convergence, up to the budget. 500ms is a guess informed by the ~4.6s window
-the capture showed the speed digits staying up — not yet re-tested against
-hardware.
+convergence, up to the budget.
+
+**Confirmed 2026-09-05 on hardware, display already awake**: LOW→HIGH took
+two presses (measured ~547ms apart, matching the 500ms interval plus some
+slack) — first opened the menu (`"F1"`, unchanged), second landed
+(`"F2"`) — converged with no wasted retries and no need for a second Home
+Assistant click. A subsequent HIGH→LOW request converged in a single press
+(menu presumably still "warm" from the recent interaction). Still worth
+testing specifically from an asleep start (the 3-press case described
+below) for full confidence, but the mechanism (retry until the real digit
+confirms it, not a fixed press count) should already cover it.
 
 There's a second, distinct contributor visible in the same capture: the
 display was asleep when the FAN command was sent, and the very first
@@ -231,10 +281,32 @@ The unit displays Fahrenheit; ESPHome climate is Celsius internally. `f_to_c()` 
 `c_to_f()` helpers convert on read, and all comparisons in the adjustment loop are
 done in Fahrenheit. Visual range 16–30°C, step 0.5.
 
-### Fan speed requires a double press
-One press only *displays* the current speed; a second press while the menu is open
-changes it. Currently handled with two `send_rmt_data` calls separated by a
-blocking `delay(150)`.
+### Line noise and the E3 fault
+Occasional single-bit-corrupted panel packets show up in captures — e.g.
+`30 40 8a`, `30 00 82`, `30 00 ca`, all exactly one flipped bit away from the
+normal `KEEPALIVE` (`30 00 8a`). Electrical noise on `panel_rx`, not real
+button events; `recv_from_panel()` logs these as "unknown packet" and
+forwards them to the AC unmodified (harmless — the AC's own checksum
+validation, if any, is what decides what to do with them; this component
+doesn't validate panel→AC checksums itself).
+
+These are the leading theory for the intermittent `E3` fault seen on the
+physical display (self-clears after several seconds; not caused by this
+component's own commands). Confirmed 2026-09-06: `E3` only appears while the
+AC is genuinely **off**, never while merely display-asleep-but-running — and
+in one capture, a burst of the corrupted packets above landed in exactly that
+window. The AC only checks in with the panel about once every ~10s while
+genuinely off (vs. ~10/sec while running); if noise corrupts that one sparse
+exchange, there's no quick retry to mask it before something on the AC's side
+flags it, whereas the same noise during normal operation would be one bad
+packet lost in a stream of good ones. This refines an earlier theory that tied
+`E3` specifically to flashing/rebooting the ESP32 (which does briefly open
+both lines) — that's evidently just one *source* of such noise, not the only
+one; this capture's noise burst happened over two minutes after the last
+boot. The AC's own status packet showed zero change through the whole
+window either way — `E3`, whatever it is, leaves no fingerprint in this
+protocol, so it can't be directly detected or confirmed from here, only
+inferred from timing.
 
 ---
 
@@ -265,8 +337,16 @@ blocking `delay(150)`.
 2. ~~**Replace the `delay(150)` fan double-press**~~ Resolved 2026-09-05 — see
    "Fan speed double-press" above. Non-blocking retry loop, timing not yet
    re-tested against hardware.
-3. **Ignore digits while the timer is displayed** — gate the temperature read on
-   `!packet.timer`, or a timer countdown is read as a setpoint.
+3. ~~**Ignore digits while the timer is displayed**~~ Resolved 2026-09-06 —
+   confirmed by capture (setting a 4-hour timer): `Target Temperature` in the
+   climate log tracked the timer's duration-setup digits exactly
+   (`f_to_c(1)`, `f_to_c(2)`, `f_to_c(3)`, `f_to_c(4)`) with zero real
+   temperature input. Both the passive readback and the active
+   `steps_left_to_adjust_temp` block now gate on `!packet.timer` (the latter
+   just defers rather than cancels or guesses, since it can't tell whether a
+   pending request is really unreachable or just temporarily obscured). This
+   also incidentally confirms the `timer` bit itself is correctly mapped
+   post-swap — see "Manually setting the timer" above.
 4. ~~**Water-full bit is unverified.**~~ Resolved 2026-09-04 — see "Status bits"
    above: it was upstream's `timer` bit all along (fan mode showed no change
    because the wrong bit was being watched). Confirmed in both dehumidify and

@@ -14,8 +14,8 @@ static volatile uint8_t ac_rx_packet[JHS_AC_PACKET_SIZE];
 
 static void IRAM_ATTR jhs_ac_rx_isr()
 {
-    unsigned long length = micros() - ac_rx_last_falling_edge_time;
-    ac_rx_last_falling_edge_time = micros();
+    unsigned long length = ::micros() - ac_rx_last_falling_edge_time;
+    ac_rx_last_falling_edge_time = ::micros();
     if (length > 20 && length < 32 * 250)
     {
         if (length < 2 * 250 + 280)
@@ -43,7 +43,9 @@ static void IRAM_ATTR jhs_ac_rx_isr()
         {
             ac_rx_bits_from_start = 0;
 
-            xQueueSend(ac_rx_queue, (void *) ac_rx_packet, 0);
+            BaseType_t woken = pdFALSE;
+            xQueueSendFromISR(ac_rx_queue, (void *) ac_rx_packet, &woken);
+            if (woken) portYIELD_FROM_ISR();
         }
     }
 }
@@ -54,8 +56,8 @@ static volatile uint8_t panel_rx_packet[JHS_PANEL_PACKET_SIZE];
 
 static void IRAM_ATTR jhs_panel_rx_isr()
 {
-    unsigned long length = micros() - panel_rx_last_falling_edge_time;
-    panel_rx_last_falling_edge_time = micros();
+    unsigned long length = ::micros() - panel_rx_last_falling_edge_time;
+    panel_rx_last_falling_edge_time = ::micros();
     if (length > 20 && length < 32 * 250)
     {
         if (length < 2 * 250 + 280)
@@ -83,7 +85,9 @@ static void IRAM_ATTR jhs_panel_rx_isr()
         {
             panel_rx_bits_from_start = 0;
 
-            xQueueSend(panel_rx_queue, (void *) panel_rx_packet, 0);
+            BaseType_t woken = pdFALSE;
+            xQueueSendFromISR(panel_rx_queue, (void *) panel_rx_packet, &woken);
+            if (woken) portYIELD_FROM_ISR();
         }
     }
 }

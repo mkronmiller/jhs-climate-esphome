@@ -154,12 +154,20 @@ POWER       0x30 0x10 0x9a
   this into its internal fan-speed state whenever it sees those digits, which
   means fan speed reads as unknown/stale until the speed has been displayed
   at least once after boot.
-- Changing fan speed from Home Assistant requires **two** button presses
-  (the first only opens/displays the menu), currently done with a blocking
-  `delay(150)` between them.
+- Changing fan speed takes **two** physical button presses on the AC — the
+  first only opens/displays the speed menu, the second actually changes it
+  (a third if the display was asleep, since the very first press after sleep
+  just wakes the panel). The component retries automatically (spaced ~500ms
+  apart, non-blocking) until the real `"F1"`/`"F2"` digits confirm it
+  converged, so a single request from Home Assistant should be enough.
 - Requesting a target temperature only makes sense in cool mode — there's no
   setpoint on the display to converge on otherwise — so temperature
-  adjustment is a no-op outside cool mode.
+  adjustment is a no-op outside cool mode. **Home Assistant's climate card
+  still shows the temperature dial in every mode regardless** — that's a
+  limitation of how ESPHome/HA expose climate capabilities (a single
+  entity-wide flag, not something that can vary by mode), not something this
+  component can suppress. Turning the dial while in a mode with no real
+  setpoint is harmless; it just does nothing on the AC.
 - The status bits are not all where upstream put them: `fan`/`dehum` and
   `water_full`/`timer` are each swapped relative to upstream's layout on this
   panel. Both swaps were confirmed by diffing captures (see

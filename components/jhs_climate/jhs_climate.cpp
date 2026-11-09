@@ -146,6 +146,36 @@ void JHSClimate::loop()
 {
     this->recv_from_ac();
     this->recv_from_panel();
+    this->check_link_watchdogs();
+}
+
+// Panel -> AC frames are 0x30, code, checksum (0x5A + sum of preceding bytes).
+static bool is_valid_panel_packet(const uint8_t *p)
+{
+    return p[0] == 0x30 && (uint8_t)(0x5A + p[0] + p[1]) == p[2];
+}
+
+void JHSClimate::check_link_watchdogs()
+{
+    uint32_t now = esphome::millis();
+    if (this->have_last_ac_packet && now - this->last_sent_to_panel > AC_TO_PANEL_WATCHDOG)
+    {
+        // Repeat the last good state so the panel doesn't time out. Never
+        // repeat a beep — it already sounded the first time.
+        JHSAcPacket repeat = this->last_ac_packet;
+        repeat.beep_amount = 0;
+        repeat.beep_length = 0;
+        ESP_LOGW(TAG, "No valid AC packet for %ums, repeating last one to panel", now - this->last_sent_to_panel);
+        this->send_rmt_data(this->rmt_panel_tx, repeat.to_wire_format());
+        this->last_sent_to_panel = now;
+    }
+    if (this->last_sent_to_ac != 0 && now - this->last_sent_to_ac > PANEL_TO_AC_WATCHDOG)
+    {
+        ESP_LOGW(TAG, "No valid panel packet for %ums, sending keepalive to AC", now - this->last_sent_to_ac);
+        std::vector<uint8_t> keepalive(KEEPALIVE_PACKET.begin(), KEEPALIVE_PACKET.end());
+        this->send_rmt_data(this->rmt_ac_tx, keepalive);
+        this->last_sent_to_ac = now;
+    }
 }
 
 
@@ -155,6 +185,20 @@ void JHSClimate::recv_from_panel()
     while (xQueueReceive(panel_rx_queue, &packet, 0))
     {
         std::vector<uint8_t> packet_vector(packet, packet + JHS_PANEL_PACKET_SIZE);
+
+        if (!is_valid_panel_packet(packet))
+        {
+            // A bit got flipped on the wire (e.g. 30 00 92 / 31 00 8a, one or
+            // two bits off a keepalive). Forwarding it gives the AC a frame
+            // that fails its checksum. Nearly every panel frame is a
+            // keepalive, so send a clean one in its place. If it really was a
+            // button press, that press is lost and the user presses again.
+            ESP_LOGW(TAG, "Corrupt packet from panel: %s, sending keepalive instead", bytes_to_hex2(packet_vector).c_str());
+            packet_vector.assign(KEEPALIVE_PACKET.begin(), KEEPALIVE_PACKET.end());
+            this->send_rmt_data(this->rmt_ac_tx, packet_vector);
+            this->last_sent_to_ac = esphome::millis();
+            continue;
+        }
 
         if (memcmp(packet, &KEEPALIVE_PACKET, JHS_PANEL_PACKET_SIZE) == 0)
         {
@@ -205,6 +249,7 @@ void JHSClimate::recv_from_panel()
             ESP_LOGI(TAG, "Received unknown packet from panel: %s", bytes_to_hex2(packet_vector).c_str());
         }
         this->send_rmt_data(this->rmt_ac_tx, packet_vector);
+        this->last_sent_to_ac = esphome::millis();
     }
 }
 
@@ -223,7 +268,8 @@ void JHSClimate::recv_from_ac()
         esphome::optional<JHSAcPacket> packet_optional = JHSAcPacket::parse(packet_vector);
         if (!packet_optional)
         {
-            ESP_LOGV(TAG, "Received invalid packet from AC");
+            // Logged at W (was V) so a dropped frame shows up next to any E3.
+            ESP_LOGW(TAG, "Invalid packet from AC: %s", bytes_to_hex2(packet_vector).c_str());
             continue;
         }
         JHSAcPacket packet = *packet_optional;
@@ -291,15 +337,28 @@ void JHSClimate::recv_from_ac()
             // if we are not adjusting anything we can copy the state from the packet to the climate
 
             bool did_change = false;
-            if (packet.get_temp() > 0 && c_to_f(this->target_temperature) != packet.get_temp() && packet.cool)
+            // While the timer's duration-setting screen is up, the AC repurposes
+            // these same two digit bytes to show the selected hour count (1, 2,
+            // 3, ...) instead of the temperature — confirmed by capture: setting
+            // a 4-hour timer read back as target temperature dropping to
+            // f_to_c(1)..f_to_c(4) in sequence, purely from the digits, with no
+            // real temperature request involved. packet.timer stays set for the
+            // whole armed duration (not just the setup screen), so this also
+            // means target/current temperature won't track a real digit change
+            // while a timer is armed — an acceptable tradeoff against guaranteed
+            // corruption every time a timer is set.
+            if (!packet.timer)
             {
-                this->target_temperature = f_to_c(packet.get_temp());
-                did_change = true;
-            }
-            if (this->current_temperature != f_to_c(packet.get_temp()))
-            {
-                this->current_temperature = f_to_c(packet.get_temp());
-                did_change = true;
+                if (packet.get_temp() > 0 && c_to_f(this->target_temperature) != packet.get_temp() && packet.cool)
+                {
+                    this->target_temperature = f_to_c(packet.get_temp());
+                    did_change = true;
+                }
+                if (this->current_temperature != f_to_c(packet.get_temp()))
+                {
+                    this->current_temperature = f_to_c(packet.get_temp());
+                    did_change = true;
+                }
             }
             if (!display_asleep && this->mode != mode_from_packet)
             {
@@ -347,7 +406,20 @@ void JHSClimate::recv_from_ac()
             // we are adjusting
             if (this->steps_left_to_adjust_temp > 0)
             {
-                if (mode_from_packet == esphome::climate::CLIMATE_MODE_COOL || display_asleep)
+                if (packet.timer)
+                {
+                    // The digit bytes are showing the timer's duration right now,
+                    // not the real setpoint (confirmed by capture), so there's
+                    // nothing valid to compare against — and pressing a temp
+                    // button while the timer's own menu might still be up risks
+                    // corrupting that instead. Defer rather than guess; this can
+                    // stall a pending request for as long as the timer stays
+                    // armed (packet.timer stays set for the whole duration, not
+                    // just its setup screen), which is an accepted tradeoff for
+                    // now over sending a button based on garbage digits.
+                    ESP_LOGD(TAG, "Timer active, deferring temperature adjustment");
+                }
+                else if (mode_from_packet == esphome::climate::CLIMATE_MODE_COOL || display_asleep)
                 {
                     // display_asleep means we can't actually see the current
                     // setpoint digits (packet.get_temp() reads -1), so this
@@ -461,6 +533,9 @@ void JHSClimate::recv_from_ac()
 
         }
         this->send_rmt_data(this->rmt_panel_tx, packet.to_wire_format());
+        this->last_sent_to_panel = esphome::millis();
+        this->last_ac_packet = packet;
+        this->have_last_ac_packet = true;
     }
 }
 
