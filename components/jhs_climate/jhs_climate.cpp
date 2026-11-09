@@ -87,11 +87,6 @@ void JHSClimate::control(const esphome::climate::ClimateCall &call)
     }
     if (call.get_mode().has_value())
     {
-        // Capture the last CONFIRMED real mode before we overwrite this->mode
-        // with the requested target below. Needed to resolve an ambiguous
-        // (display-asleep) reading correctly during the adjustment that
-        // follows — see the steps_left_to_adjust_mode block.
-        this->mode_before_adjustment = this->mode;
         this->mode = call.get_mode().value();
         this->steps_left_to_adjust_mode = 8;
     }
@@ -318,6 +313,14 @@ void JHSClimate::recv_from_ac()
         // with one, a display timeout doesn't. Don't downgrade to OFF on the
         // silent version — just leave the last known mode alone.
         bool display_asleep = mode_from_packet == esphome::climate::CLIMATE_MODE_OFF && !packet_confirmed_change;
+        // Tracked before the ADJUSTMENT_INTERVAL throttle below can skip this
+        // packet: the one beep-carrying packet that confirms a power-off is
+        // easy to miss otherwise, and every packet after it is ambiguous again.
+        if (!display_asleep)
+            this->last_confirmed_mode = mode_from_packet;
+        // Best knowledge of the AC's real mode right now: what the packet
+        // says, unless the display is asleep and the packet can't be trusted.
+        esphome::climate::ClimateMode real_mode = display_asleep ? this->last_confirmed_mode : mode_from_packet;
         // This unit never sets the fan_low/fan_high status bits. Fan speed is
         // only ever shown on the display as "F1"/"F2" during the menu flash,
         // so latch it whenever we see it.
@@ -494,7 +497,12 @@ void JHSClimate::recv_from_ac()
             }
             if (this->steps_left_to_adjust_mode > 0)
             {
-                if (this->mode != mode_from_packet)
+                // Compare against real_mode, not mode_from_packet: an asleep
+                // display reads as OFF, so a requested OFF would otherwise
+                // "match" a unit that's still running and never get sent
+                // (confirmed 2026-11-08: cool on → display sleep → off from
+                // HA showed off but the AC kept cooling).
+                if (this->mode != real_mode)
                 {
                     auto packet_to_send = BUTTON_MODE;
                     // BUTTON_ON is a power toggle, not a plain "turn on" — sending
@@ -502,15 +510,14 @@ void JHSClimate::recv_from_ac()
                     // off. A genuinely-off unit and one that's merely asleep look
                     // identical here (both silent, all-zero, no beep — the beep
                     // only marks the transition moment, not the ongoing state),
-                    // so an ambiguous reading alone can't decide this. Fall back
-                    // on what was confirmed before this adjustment started: if
-                    // the unit really was off then, still-ambiguous-now is almost
-                    // certainly still off too (nothing since has un-confirmed it);
-                    // if it was actually running, don't risk toggling it off.
-                    bool confirmed_off_now = mode_from_packet == esphome::climate::CLIMATE_MODE_OFF && !display_asleep;
-                    bool assume_off = confirmed_off_now ||
-                        (display_asleep && this->mode_before_adjustment == esphome::climate::CLIMATE_MODE_OFF);
-                    if (this->mode == esphome::climate::ClimateMode::CLIMATE_MODE_OFF || assume_off)
+                    // so real_mode falls back on the last confirmed reading.
+                    //
+                    // Turning off from asleep takes two presses: the first only
+                    // wakes the display (revealing e.g. COOL, still != OFF), the
+                    // second toggles power, and its beep-carrying all-zero packet
+                    // confirms OFF and ends the loop.
+                    if (this->mode == esphome::climate::ClimateMode::CLIMATE_MODE_OFF ||
+                        real_mode == esphome::climate::ClimateMode::CLIMATE_MODE_OFF)
                     {
                         packet_to_send = BUTTON_ON;
                         ESP_LOGD(TAG, "Sending BUTTON_ON packet to AC");

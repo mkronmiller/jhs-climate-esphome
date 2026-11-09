@@ -229,6 +229,18 @@ cool 76`):
 All three fixes (display-sleep state preservation, temp-lockout ambiguity,
 mode BUTTON_ON/BUTTON_MODE disambiguation) considered resolved.
 
+**Regression found 2026-11-08**: `cool → [display sleep] → OFF from HA`
+showed OFF in HA but the AC kept cooling. The convergence check compared the
+requested mode against `mode_from_packet`, which reads `OFF` while asleep, so
+a requested OFF "matched" immediately and no button was ever sent (worked
+fine with the display awake). Fixed by replacing `mode_before_adjustment`
+(captured once in `control()`) with `last_confirmed_mode`, updated from every
+non-ambiguous packet *before* the `ADJUSTMENT_INTERVAL` throttle, and
+comparing against `real_mode` (= `last_confirmed_mode` while asleep). Turning
+off from asleep now sends two `BUTTON_ON`s: wake (reveals COOL), then toggle
+(beep-carrying OFF confirms and ends the loop). Not yet re-tested on
+hardware.
+
 **Not yet fixed**, and lower priority since it needs `adjust_preset` to be
 in-flight at the exact moment the display is asleep: the sleep-preset block
 reads `packet.sleep` the same way and could send a spurious/wrong-direction

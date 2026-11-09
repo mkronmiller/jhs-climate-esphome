@@ -61,10 +61,12 @@ protected:
     uint32_t last_fan_adjustment = 0;
     const int FAN_ADJUSTMENT_INTERVAL = 500;
     bool adjust_preset = false;
-    // Last confirmed (non-ambiguous) mode before the current mode adjustment
-    // began. Used to tell a genuinely-off unit apart from one that's merely
-    // asleep-but-running when a mid-adjustment packet is ambiguous.
-    esphome::climate::ClimateMode mode_before_adjustment = esphome::climate::CLIMATE_MODE_OFF;
+    // Mode from the most recent non-ambiguous AC packet (a lit display, or an
+    // all-zero packet that carried the power-off beep). Updated on every such
+    // packet, including mid-adjustment, so it always reflects the AC's real
+    // state as of the last time we could actually see it. Used in place of
+    // the packet's own reading while the display is asleep.
+    esphome::climate::ClimateMode last_confirmed_mode = esphome::climate::CLIMATE_MODE_OFF;
     bool water_full = false;
     uint32_t last_water_full = 0;
     const int WATER_FULL_INTERVAL = 3000;
